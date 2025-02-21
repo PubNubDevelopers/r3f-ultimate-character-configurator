@@ -59,13 +59,11 @@ export const useConfiguratorStore = create((set, get) => ({
       });
 
       set({ chat });
-      console.log("✅ PubNub Chat Initialized:", chat);
 
       // Ensure user exists in PubNub Chat
       const existingUser = await chat.getUser(userUUID).catch(() => null);
       if (!existingUser) {
         await chat.createUser(userUUID, { name: `Avatar-Player-${userUUID}` });
-        console.log("🎉 New user created in PubNub Chat:", userUUID);
       }
     } catch (error) {
       console.error("❌ Failed to initialize PubNub Chat:", error);
@@ -77,7 +75,6 @@ export const useConfiguratorStore = create((set, get) => ({
       const targetCategory = categoryName || state.currentCategory?.name;
 
       if (!targetCategory) {
-        console.warn("No category available to apply color!");
         return {};
       }
 
@@ -98,10 +95,8 @@ export const useConfiguratorStore = create((set, get) => ({
     }
   },
   applyInitialColors: (colorMap) => {
-    console.log("Applying colors:", colorMap);
 
     Object.entries(colorMap).forEach(([categoryName, color]) => {
-      console.log(`Applying color ${color} to category ${categoryName}`);
       get().updateColor(color, categoryName);
     });
   },

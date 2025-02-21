@@ -1,20 +1,41 @@
 import { NodeIO } from "@gltf-transform/core";
 import { dedup, draco, prune, quantize } from "@gltf-transform/functions";
 import { useAnimations, useGLTF } from "@react-three/drei";
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { GLTFExporter } from "three-stdlib";
 import { useConfiguratorStore } from "../store";
 import { Asset } from "./Asset";
 
-export const Avatar = ({ ...props }) => {
+export const Avatar = (props) => {
   const group = useRef();
-  const { nodes } = useGLTF("/models/Armature.glb"); // Updated to local folder
-  const { animations } = useGLTF("/models/Poses.glb"); // Updated to local folder
+  const { nodes, scene } = useGLTF("/models/Armature.glb");
+  const { animations } = useGLTF("/models/Poses.glb");
   const customization = useConfiguratorStore((state) => state.customization);
   const { actions } = useAnimations(animations, group);
   const setDownload = useConfiguratorStore((state) => state.setDownload);
-
   const pose = useConfiguratorStore((state) => state.pose);
+
+  const [isModelLoaded, setIsModelLoaded] = useState(false);
+
+  // Ensure the model is fully loaded before applying animations
+  useEffect(() => {
+    if (scene && group.current) {
+      setIsModelLoaded(true);
+    }
+  }, [scene]);
+
+  // Filter out missing bones from animations
+  const filteredAnimations = animations.map((clip) => ({
+    ...clip,
+    tracks: clip.tracks.filter((track) => nodes[track.name.split(".")[0]]),
+  }));
+
+  useEffect(() => {
+    if (isModelLoaded && actions[pose]) {
+      actions[pose].reset().fadeIn(0.2).play();
+    }
+    return () => actions[pose]?.fadeOut(0.2).stop();
+  }, [isModelLoaded, actions, pose]);
 
   useEffect(() => {
     function download() {
@@ -24,50 +45,38 @@ export const Avatar = ({ ...props }) => {
         async function (result) {
           const io = new NodeIO();
 
-          // Read.
-          const document = await io.readBinary(new Uint8Array(result)); // Uint8Array → Document
+          // Read & Optimize the model
+          const document = await io.readBinary(new Uint8Array(result));
           await document.transform(
-            // Remove unused nodes, textures, or other data.
-            prune(),
-            // Remove duplicate vertex or texture data, if any.
-            dedup(),
-            // Compress mesh geometry with Draco.
-            draco(),
-            // Quantize mesh geometry.
-            quantize()
+            prune(), // Remove unused nodes, textures, or data
+            dedup(), // Remove duplicate vertex/texture data
+            draco(), // Compress mesh geometry
+            quantize() // Quantize mesh geometry
           );
 
-          // Write.
-          const glb = await io.writeBinary(document); // Document → Uint8Array
-
-          save(
-            new Blob([glb], { type: "application/octet-stream" }),
-            `avatar_${+new Date()}.glb`
-          );
+          // Write & Download the optimized GLB file
+          const glb = await io.writeBinary(document);
+          saveFile(glb, `avatar_${Date.now()}.glb`);
         },
         function (error) {
-          console.error(error);
+          console.error("GLTF Export Error:", error);
         },
         { binary: true }
       );
     }
 
-    const link = document.createElement("a");
-    link.style.display = "none";
-    document.body.appendChild(link); // Firefox workaround, see #6594
-
-    function save(blob, filename) {
-      link.href = URL.createObjectURL(blob);
+    function saveFile(blobData, filename) {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([blobData], { type: "application/octet-stream" }));
       link.download = filename;
+      link.style.display = "none";
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     }
+
     setDownload(download);
   }, []);
-
-  useEffect(() => {
-    actions[pose]?.fadeIn(0.2).play();
-    return () => actions[pose]?.fadeOut(0.2).stop();
-  }, [actions, pose]);
 
   return (
     <group ref={group} {...props} dispose={null}>
